@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Container, Title, Card, TextInput, NumberInput, Switch, Button, Group, Text, Divider, Stack } from '@mantine/core';
+import { Container, Title, Card, TextInput, NumberInput, Switch, Button, Group, Text, Divider, Stack, Textarea, PasswordInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconDeviceFloppy } from '@tabler/icons-react';
 import { getSettings, updateSetting } from '../api';
@@ -149,6 +149,113 @@ export default function Settings() {
 
           <Text size="xs" c="dimmed" mt="xs">
             Alerts are only sent once per day per certificate, on the configured days
+          </Text>
+        </Card>
+
+        {/* Proxy Configuration */}
+        <Card withBorder p="lg">
+          <Title order={3} mb="md">Proxy Configuration</Title>
+          <Text size="sm" c="dimmed" mb="md">
+            Configure HTTP/HTTPS proxy for webhook and email connections
+          </Text>
+
+          <Switch
+            label="Enable Proxy"
+            description="Route webhook and email traffic through proxy"
+            checked={settings['proxy.enabled'] === 'true'}
+            onChange={(e) => updateSetting('proxy.enabled', e.currentTarget.checked ? 'true' : 'false')}
+            mb="md"
+          />
+
+          <TextInput
+            label="Proxy Host"
+            placeholder="proxy.example.com"
+            value={settings['proxy.host'] || ''}
+            onChange={(e) => updateSetting('proxy.host', e.target.value)}
+            mb="sm"
+            disabled={settings['proxy.enabled'] !== 'true'}
+          />
+
+          <NumberInput
+            label="Proxy Port"
+            placeholder="8080"
+            value={parseInt(settings['proxy.port']) || 8080}
+            onChange={(value) => updateSetting('proxy.port', value.toString())}
+            mb="sm"
+            disabled={settings['proxy.enabled'] !== 'true'}
+          />
+
+          <TextInput
+            label="Proxy Username (Optional)"
+            placeholder="username"
+            value={settings['proxy.username'] || ''}
+            onChange={(e) => updateSetting('proxy.username', e.target.value)}
+            mb="sm"
+            disabled={settings['proxy.enabled'] !== 'true'}
+          />
+
+          <PasswordInput
+            label="Proxy Password (Optional)"
+            placeholder="password"
+            value={settings['proxy.password'] || ''}
+            onChange={(e) => updateSetting('proxy.password', e.target.value)}
+            mb="sm"
+            disabled={settings['proxy.enabled'] !== 'true'}
+          />
+        </Card>
+
+        {/* TLS Configuration */}
+        <Card withBorder p="lg">
+          <Title order={3} mb="md">TLS Check Configuration</Title>
+          <Text size="sm" c="dimmed" mb="md">
+            Configure timeout and concurrency for certificate checks
+          </Text>
+
+          <NumberInput
+            label="Connection Timeout (ms)"
+            description="Timeout for TLS connection attempts"
+            min={1000}
+            max={60000}
+            step={1000}
+            value={parseInt(settings['tls.timeout']) || 10000}
+            onChange={(value) => updateSetting('tls.timeout', value.toString())}
+            mb="sm"
+          />
+
+          <NumberInput
+            label="Maximum Concurrent Checks"
+            description="Maximum number of certificates to check simultaneously"
+            min={1}
+            max={20}
+            value={parseInt(settings['tls.concurrency']) || 5}
+            onChange={(value) => updateSetting('tls.concurrency', value.toString())}
+            mb="sm"
+          />
+
+          <Text size="xs" c="dimmed" mt="xs">
+            Lower concurrency reduces server load but increases total check time
+          </Text>
+        </Card>
+
+        {/* Environment Configuration */}
+        <Card withBorder p="lg">
+          <Title order={3} mb="md">Environment Configuration</Title>
+          <Text size="sm" c="dimmed" mb="md">
+            Define available environment options for certificates
+          </Text>
+
+          <Textarea
+            label="Environment List"
+            description="Comma-separated list of environment names (e.g., prod,non-prod,qa,dev)"
+            placeholder="prod,non-prod"
+            value={settings['environments.list'] || 'prod,non-prod'}
+            onChange={(e) => updateSetting('environments.list', e.target.value)}
+            minRows={2}
+            mb="sm"
+          />
+
+          <Text size="xs" c="dimmed" mt="xs">
+            These options will appear in the environment dropdown when creating/editing certificates
           </Text>
         </Card>
 

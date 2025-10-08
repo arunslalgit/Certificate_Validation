@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { AppShell, Burger, Group, NavLink as MantineNavLink, Text, Button, Divider } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDashboard, IconCertificate, IconLogout, IconLock, IconUsers, IconSettings } from '@tabler/icons-react';
+import { IconDashboard, IconCertificate, IconLogout, IconLock, IconUsers, IconSettings, IconBell } from '@tabler/icons-react';
 import { useAuth } from '../AuthContext';
 import { logout } from '../api';
 
@@ -67,6 +67,15 @@ export default function Layout() {
           to="/certificates"
           label="Certificates"
           leftSection={<IconCertificate size={20} />}
+          style={({ isActive }) => ({
+            backgroundColor: isActive ? 'var(--mantine-color-blue-light)' : undefined,
+          })}
+        />
+        <MantineNavLink
+          component={NavLink}
+          to="/alerts"
+          label="Alert Logs"
+          leftSection={<IconBell size={20} />}
           style={({ isActive }) => ({
             backgroundColor: isActive ? 'var(--mantine-color-blue-light)' : undefined,
           })}

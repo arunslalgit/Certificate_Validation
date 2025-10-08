@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Certificates from './pages/Certificates';
+import Alerts from './pages/Alerts';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
 
@@ -49,6 +50,7 @@ function App() {
             >
               <Route index element={<Dashboard />} />
               <Route path="certificates" element={<Certificates />} />
+              <Route path="alerts" element={<Alerts />} />
               <Route path="users" element={
                 <ProtectedRoute adminOnly={true}>
                   <Users />

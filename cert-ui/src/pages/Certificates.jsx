@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Container, Title, Button, Table, Badge, Group, Modal, TextInput, Select, NumberInput, ActionIcon, LoadingOverlay } from '@mantine/core';
+import { Container, Title, Button, Table, Badge, Group, Modal, TextInput, Select, NumberInput, ActionIcon, LoadingOverlay, MultiSelect, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconPlus, IconEdit, IconTrash, IconBrandTeams } from '@tabler/icons-react';
-import { getCertificates, createCertificate, updateCertificate, deleteCertificate, testWebhook } from '../api';
+import { IconPlus, IconEdit, IconTrash, IconBrandTeams, IconFlask } from '@tabler/icons-react';
+import { getCertificates, createCertificate, updateCertificate, deleteCertificate, testWebhook, getEnvironments } from '../api';
 
 export default function Certificates() {
   const [certificates, setCertificates] = useState([]);
+  const [environments, setEnvironments] = useState(['prod', 'non-prod']);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -15,6 +16,7 @@ export default function Certificates() {
     url: '',
     environment: 'prod',
     alert_threshold_days: 50,
+    alert_days: null,
     email_recipients: '',
     teams_webhook_url: '',
     check_frequency_hours: 4,
@@ -23,7 +25,17 @@ export default function Certificates() {
 
   useEffect(() => {
     loadCertificates();
+    loadEnvironments();
   }, []);
+
+  const loadEnvironments = async () => {
+    try {
+      const response = await getEnvironments();
+      setEnvironments(response.data.environments);
+    } catch (error) {
+      console.error('Failed to load environments', error);
+    }
+  };
 
   const loadCertificates = async () => {
     try {
@@ -77,6 +89,7 @@ export default function Certificates() {
       url: cert.url,
       environment: cert.environment,
       alert_threshold_days: cert.alert_threshold_days,
+      alert_days: cert.alert_days || null,
       email_recipients: cert.email_recipients || '',
       teams_webhook_url: cert.teams_webhook_url || '',
       check_frequency_hours: cert.check_frequency_hours,
@@ -128,8 +141,9 @@ export default function Certificates() {
       eai_number: '',
       eai_name: '',
       url: '',
-      environment: 'prod',
+      environment: environments[0] || 'prod',
       alert_threshold_days: 50,
+      alert_days: null,
       email_recipients: '',
       teams_webhook_url: '',
       check_frequency_hours: 4,
@@ -270,12 +284,7 @@ export default function Certificates() {
           required
           value={formData.environment}
           onChange={(value) => setFormData({ ...formData, environment: value })}
-          data={[
-            { value: 'dev', label: 'Development' },
-            { value: 'qa', label: 'QA' },
-            { value: 'uat', label: 'UAT' },
-            { value: 'prod', label: 'Production' },
-          ]}
+          data={environments.map(env => ({ value: env, label: env.toUpperCase() }))}
           mb="sm"
         />
 
@@ -295,6 +304,25 @@ export default function Certificates() {
           value={formData.alert_threshold_days}
           onChange={(value) => setFormData({ ...formData, alert_threshold_days: value })}
           mb="sm"
+        />
+
+        <MultiSelect
+          label="Alert Days (Optional)"
+          placeholder="Leave empty to use global Monday/Friday settings"
+          description="Specify custom days for this certificate (overrides global settings)"
+          value={formData.alert_days ? formData.alert_days.split(',') : []}
+          onChange={(value) => setFormData({ ...formData, alert_days: value.length > 0 ? value.join(',') : null })}
+          data={[
+            { value: 'monday', label: 'Monday' },
+            { value: 'tuesday', label: 'Tuesday' },
+            { value: 'wednesday', label: 'Wednesday' },
+            { value: 'thursday', label: 'Thursday' },
+            { value: 'friday', label: 'Friday' },
+            { value: 'saturday', label: 'Saturday' },
+            { value: 'sunday', label: 'Sunday' },
+          ]}
+          mb="sm"
+          clearable
         />
 
         <TextInput

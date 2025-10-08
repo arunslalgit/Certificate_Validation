@@ -1,6 +1,31 @@
 const tls = require('tls');
 const { URL } = require('url');
 const logger = require('./logger');
+const { query } = require('./db');
+
+// Cache for TLS timeout setting
+let tlsTimeout = 10000;
+let lastSettingsFetch = 0;
+const SETTINGS_CACHE_MS = 60000; // Cache for 1 minute
+
+/**
+ * Get TLS timeout from system settings
+ */
+async function getTlsTimeout() {
+  const now = Date.now();
+  if (now - lastSettingsFetch > SETTINGS_CACHE_MS) {
+    try {
+      const { rows } = await query("SELECT value FROM system_settings WHERE key = 'tls.timeout'");
+      if (rows.length > 0) {
+        tlsTimeout = parseInt(rows[0].value) || 10000;
+      }
+      lastSettingsFetch = now;
+    } catch (error) {
+      logger.error('Failed to fetch TLS timeout setting', { error: error.message });
+    }
+  }
+  return tlsTimeout;
+}
 
 /**
  * Check SSL certificate for a given URL
@@ -8,6 +33,8 @@ const logger = require('./logger');
  * @returns {Promise<Object>} Certificate details
  */
 async function checkCertificate(urlString) {
+  const timeout = await getTlsTimeout();
+
   return new Promise((resolve, reject) => {
     try {
       // Parse URL
@@ -22,7 +49,7 @@ async function checkCertificate(urlString) {
         port: port,
         servername: hostname, // SNI support
         rejectUnauthorized: false, // Accept self-signed and invalid certs
-        timeout: 10000
+        timeout: timeout
       };
 
       const socket = tls.connect(options, () => {
@@ -102,7 +129,7 @@ async function checkCertificate(urlString) {
         reject(new Error('Connection timeout'));
       });
 
-      socket.setTimeout(10000);
+      socket.setTimeout(timeout);
 
     } catch (err) {
       logger.error('Certificate check failed', { error: err.message, url: urlString });

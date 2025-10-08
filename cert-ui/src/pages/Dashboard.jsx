@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Title, Grid, Card, Text, Badge, Button, Table, Group, LoadingOverlay, TextInput, Select, Modal, ActionIcon, Stack, Divider, List } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconRefresh, IconCheck, IconAlertTriangle, IconX, IconClock, IconFilter, IconFilterOff, IconSearch, IconEye, IconCertificate } from '@tabler/icons-react';
+import { IconRefresh, IconCheck, IconAlertTriangle, IconX, IconClock, IconFilter, IconFilterOff, IconSearch, IconEye, IconCertificate, IconFlask } from '@tabler/icons-react';
 import { getLatestResults, getDashboardStats } from '../api';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -83,6 +83,37 @@ export default function Dashboard() {
   const viewDetails = (result) => {
     setSelectedCert(result);
     setDetailsModalOpen(true);
+  };
+
+  const checkSingleCertificate = (configId) => {
+    const eventSource = new EventSource(`/api/stream/certificates/check/${configId}`);
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      const daysUntilExpiry = data.daysUntilExpiry ?? data.days_until_expiry ?? 'N/A';
+      const statusText = data.status?.replace('_', ' ') || 'Unknown';
+
+      notifications.show({
+        title: `${data.eai_name} Checked`,
+        message: `${statusText} - ${daysUntilExpiry === 'N/A' ? daysUntilExpiry : daysUntilExpiry + ' days until expiry'}`,
+        color: data.status === 'valid' ? 'green' : data.status === 'expiring_soon' ? 'yellow' : 'red',
+      });
+    };
+
+    eventSource.addEventListener('done', () => {
+      eventSource.close();
+      loadData();
+    });
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to check certificate',
+        color: 'red',
+      });
+    };
   };
 
   const checkAllCertificates = () => {
@@ -316,14 +347,24 @@ export default function Dashboard() {
                   </Text>
                 </Table.Td>
                 <Table.Td>
-                  <ActionIcon
-                    variant="light"
-                    color="blue"
-                    onClick={() => viewDetails(result)}
-                    title="View Details & SANs"
-                  >
-                    <IconEye size={16} />
-                  </ActionIcon>
+                  <Group gap="xs">
+                    <ActionIcon
+                      variant="light"
+                      color="green"
+                      onClick={() => checkSingleCertificate(result.config_id)}
+                      title="Test Check Certificate"
+                    >
+                      <IconFlask size={16} />
+                    </ActionIcon>
+                    <ActionIcon
+                      variant="light"
+                      color="blue"
+                      onClick={() => viewDetails(result)}
+                      title="View Details & SANs"
+                    >
+                      <IconEye size={16} />
+                    </ActionIcon>
+                  </Group>
                 </Table.Td>
               </Table.Tr>
             ))}

@@ -119,7 +119,7 @@ async function checkSingleCertificate(config) {
     );
 
     // Check if alert needed
-    if (shouldSendAlert(config, result)) {
+    if (await shouldSendAlert(config, result)) {
       await sendAlert(config, result);
     }
 
@@ -149,7 +149,7 @@ async function checkSingleCertificate(config) {
 /**
  * Determine if an alert should be sent
  */
-function shouldSendAlert(config, result) {
+async function shouldSendAlert(config, result) {
   // 1. Check if email or webhook is configured for this certificate
   if (!config.email_recipients && !config.teams_webhook_url) {
     return false;
@@ -161,11 +161,45 @@ function shouldSendAlert(config, result) {
     return false;
   }
 
-  // 3. Check if it's Monday (1) or Friday (5)
+  // 3. Check if today is an alert day
   const today = new Date().getDay();
-  if (today !== 1 && today !== 5) {
-    logger.debug(`[Scheduler] Skipping alert - not Monday or Friday (day ${today})`);
-    return false;
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const todayName = dayNames[today];
+
+  // Check if certificate has custom alert days
+  if (config.alert_days) {
+    const alertDays = config.alert_days.split(',').map(d => d.trim().toLowerCase());
+    if (!alertDays.includes(todayName)) {
+      logger.debug(`[Scheduler] Skipping alert - not in custom alert days for ${config.eai_name} (today: ${todayName})`);
+      return false;
+    }
+  } else {
+    // Use global Monday/Friday settings
+    const { rows: settings } = await query(`
+      SELECT key, value FROM system_settings
+      WHERE key IN ('alert.monday_enabled', 'alert.friday_enabled')
+    `);
+
+    const settingsMap = {};
+    settings.forEach(s => { settingsMap[s.key] = s.value === 'true'; });
+
+    const mondayEnabled = settingsMap['alert.monday_enabled'] !== false;
+    const fridayEnabled = settingsMap['alert.friday_enabled'] !== false;
+
+    if (today === 1 && !mondayEnabled) {
+      logger.debug(`[Scheduler] Skipping alert - Monday alerts disabled globally`);
+      return false;
+    }
+
+    if (today === 5 && !fridayEnabled) {
+      logger.debug(`[Scheduler] Skipping alert - Friday alerts disabled globally`);
+      return false;
+    }
+
+    if (today !== 1 && today !== 5) {
+      logger.debug(`[Scheduler] Skipping alert - not Monday or Friday (day ${today})`);
+      return false;
+    }
   }
 
   // 4. Check if alert already sent today for this certificate

@@ -654,6 +654,18 @@ app.get('/api/settings', requireAdmin, async (req, res) => {
   }
 });
 
+// Get environment list (non-admin can access this)
+app.get('/api/settings/environments', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await query("SELECT value FROM system_settings WHERE key = 'environments.list'");
+    const envList = rows.length > 0 ? rows[0].value.split(',').map(e => e.trim()) : ['prod', 'non-prod'];
+    res.json({ environments: envList });
+  } catch (error) {
+    logger.error('Get environments error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Update system setting
 app.put('/api/settings/:key', requireAdmin, async (req, res) => {
   try {
@@ -670,6 +682,106 @@ app.put('/api/settings/:key', requireAdmin, async (req, res) => {
 
   } catch (error) {
     logger.error('Update setting error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================================
+// ALERT LOGS ENDPOINTS (Audit Trail)
+// ============================================================================
+
+// Get alert logs for a specific certificate
+app.get('/api/certificates/:id/alerts', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 50 } = req.query;
+
+    const { rows } = await query(`
+      SELECT
+        al.*,
+        cc.eai_name,
+        cc.eai_number,
+        cc.url
+      FROM alert_logs al
+      JOIN certificate_configs cc ON al.config_id = cc.id
+      WHERE al.config_id = ?
+      ORDER BY al.sent_at DESC
+      LIMIT ?
+    `, [id, parseInt(limit)]);
+
+    res.json({ alerts: rows });
+  } catch (error) {
+    logger.error('Get alerts error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all recent alert logs
+app.get('/api/alerts', requireAuth, async (req, res) => {
+  try {
+    const { limit = 100, status, alert_type } = req.query;
+
+    let sql = `
+      SELECT
+        al.*,
+        cc.eai_name,
+        cc.eai_number,
+        cc.url,
+        cc.environment
+      FROM alert_logs al
+      JOIN certificate_configs cc ON al.config_id = cc.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (status) {
+      sql += ' AND al.status = ?';
+      params.push(status);
+    }
+
+    if (alert_type) {
+      sql += ' AND al.alert_type = ?';
+      params.push(alert_type);
+    }
+
+    sql += ' ORDER BY al.sent_at DESC LIMIT ?';
+    params.push(parseInt(limit));
+
+    const { rows } = await query(sql, params);
+    res.json({ alerts: rows });
+  } catch (error) {
+    logger.error('Get all alerts error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get alert statistics
+app.get('/api/alerts/stats', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await query(`
+      SELECT
+        alert_type,
+        status,
+        COUNT(*) as count
+      FROM alert_logs
+      WHERE sent_at >= datetime('now', '-7 days')
+      GROUP BY alert_type, status
+    `);
+
+    const stats = {
+      email: { sent: 0, failed: 0 },
+      teams: { sent: 0, failed: 0 },
+      total: { sent: 0, failed: 0 }
+    };
+
+    rows.forEach(row => {
+      stats[row.alert_type][row.status] = row.count;
+      stats.total[row.status] += row.count;
+    });
+
+    res.json(stats);
+  } catch (error) {
+    logger.error('Get alert stats error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

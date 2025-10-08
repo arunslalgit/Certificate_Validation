@@ -67,4 +67,17 @@ export const getSettings = () =>
 export const updateSetting = (key, value) =>
   api.put(`/settings/${key}`, { value });
 
+export const getEnvironments = () =>
+  api.get('/settings/environments');
+
+// Alert Logs (Audit Trail)
+export const getAlertLogs = (filters = {}) =>
+  api.get('/alerts', { params: filters });
+
+export const getCertificateAlerts = (id, limit = 50) =>
+  api.get(`/certificates/${id}/alerts`, { params: { limit } });
+
+export const getAlertStats = () =>
+  api.get('/alerts/stats');
+
 export default api;
