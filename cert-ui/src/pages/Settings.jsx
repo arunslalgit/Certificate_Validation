@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Container, Title, Card, TextInput, NumberInput, Switch, Button, Group, Text, Divider, Stack, Textarea, PasswordInput } from '@mantine/core';
+import { Container, Title, Card, TextInput, NumberInput, Switch, Button, Group, Text, Divider, Stack, Textarea, PasswordInput, Tabs, Code, Table, ScrollArea, Accordion } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconDeviceFloppy } from '@tabler/icons-react';
-import { getSettings, updateSetting } from '../api';
+import { IconDeviceFloppy, IconDatabase, IconSettings, IconPlayerPlay } from '@tabler/icons-react';
+import { getSettings, updateSetting, getDatabaseSchema, executeQuery } from '../api';
 
 export default function Settings() {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Database Tools state
+  const [schema, setSchema] = useState([]);
+  const [queryText, setQueryText] = useState('SELECT * FROM certificate_configs LIMIT 10');
+  const [queryResult, setQueryResult] = useState(null);
+  const [queryExecuting, setQueryExecuting] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -61,22 +67,80 @@ export default function Settings() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
+  const loadSchema = async () => {
+    try {
+      const response = await getDatabaseSchema();
+      setSchema(response.data.schema);
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to load database schema',
+        color: 'red',
+      });
+    }
+  };
+
+  const runQuery = async () => {
+    if (!queryText.trim()) {
+      notifications.show({
+        title: 'Error',
+        message: 'Please enter a query',
+        color: 'red',
+      });
+      return;
+    }
+
+    setQueryExecuting(true);
+    setQueryResult(null);
+
+    try {
+      const response = await executeQuery(queryText);
+      setQueryResult(response.data);
+      notifications.show({
+        title: 'Query Executed',
+        message: `${response.data.rowCount} row(s) returned`,
+        color: 'green',
+      });
+    } catch (error) {
+      notifications.show({
+        title: 'Query Failed',
+        message: error.response?.data?.error || 'Failed to execute query',
+        color: 'red',
+      });
+      setQueryResult({ error: error.response?.data?.error || 'Query failed' });
+    } finally {
+      setQueryExecuting(false);
+    }
+  };
+
   if (loading) {
     return <Container size="md" py="md"><Text>Loading settings...</Text></Container>;
   }
 
   return (
-    <Container size="md" py="md">
-      <Group justify="space-between" mb="xl">
-        <Title>System Settings</Title>
-        <Button
-          leftSection={<IconDeviceFloppy size={16} />}
-          onClick={handleSave}
-          loading={saving}
-        >
-          Save Settings
-        </Button>
-      </Group>
+    <Container size="xl" py="md">
+      <Title mb="xl">System Settings</Title>
+
+      <Tabs defaultValue="settings">
+        <Tabs.List>
+          <Tabs.Tab value="settings" leftSection={<IconSettings size={16} />}>
+            Configuration
+          </Tabs.Tab>
+          <Tabs.Tab value="database" leftSection={<IconDatabase size={16} />}>
+            Database Tools
+          </Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="settings" pt="md">
+          <Group justify="flex-end" mb="md">
+            <Button
+              leftSection={<IconDeviceFloppy size={16} />}
+              onClick={handleSave}
+              loading={saving}
+            >
+              Save Settings
+            </Button>
+          </Group>
 
       <Stack gap="lg">
         {/* SMTP Configuration */}
@@ -312,6 +376,173 @@ export default function Settings() {
           </Button>
         </Group>
       </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="database" pt="md">
+          <Stack gap="lg">
+            {/* Database Schema Viewer */}
+            <Card withBorder p="lg">
+              <Group justify="space-between" mb="md">
+                <Title order={3}>Database Schema</Title>
+                <Button onClick={loadSchema} size="sm" variant="light">
+                  {schema.length > 0 ? 'Refresh Schema' : 'Load Schema'}
+                </Button>
+              </Group>
+
+              {schema.length > 0 ? (
+                <Accordion variant="separated">
+                  {schema.map((table) => (
+                    <Accordion.Item key={table.name} value={table.name}>
+                      <Accordion.Control>
+                        <Group>
+                          <Text fw={600}>{table.name}</Text>
+                          <Text size="sm" c="dimmed">
+                            ({table.columns?.length || 0} columns)
+                          </Text>
+                        </Group>
+                      </Accordion.Control>
+                      <Accordion.Panel>
+                        <Stack gap="sm">
+                          {table.columns && table.columns.length > 0 && (
+                            <div>
+                              <Text size="sm" fw={600} mb="xs">Columns:</Text>
+                              <Table striped withTableBorder withColumnBorders>
+                                <Table.Thead>
+                                  <Table.Tr>
+                                    <Table.Th>Name</Table.Th>
+                                    <Table.Th>Type</Table.Th>
+                                    <Table.Th>Not Null</Table.Th>
+                                    <Table.Th>Default</Table.Th>
+                                    <Table.Th>PK</Table.Th>
+                                  </Table.Tr>
+                                </Table.Thead>
+                                <Table.Tbody>
+                                  {table.columns.map((col) => (
+                                    <Table.Tr key={col.cid}>
+                                      <Table.Td><Code>{col.name}</Code></Table.Td>
+                                      <Table.Td>{col.type}</Table.Td>
+                                      <Table.Td>{col.notnull ? 'Yes' : 'No'}</Table.Td>
+                                      <Table.Td>{col.dflt_value || '-'}</Table.Td>
+                                      <Table.Td>{col.pk ? 'Yes' : 'No'}</Table.Td>
+                                    </Table.Tr>
+                                  ))}
+                                </Table.Tbody>
+                              </Table>
+                            </div>
+                          )}
+
+                          {table.indexes && table.indexes.length > 0 && (
+                            <div>
+                              <Text size="sm" fw={600} mb="xs">Indexes:</Text>
+                              {table.indexes.map((idx) => (
+                                <div key={idx.name}>• {idx.name}</div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div>
+                            <Text size="sm" fw={600} mb="xs">CREATE TABLE Statement:</Text>
+                            <ScrollArea>
+                              <Code block>{table.sql}</Code>
+                            </ScrollArea>
+                          </div>
+                        </Stack>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  ))}
+                </Accordion>
+              ) : (
+                <Text c="dimmed" ta="center" py="md">
+                  Click "Load Schema" to view database structure
+                </Text>
+              )}
+            </Card>
+
+            {/* SQL Query Runner */}
+            <Card withBorder p="lg">
+              <Title order={3} mb="md">Query Runner</Title>
+              <Text size="sm" c="dimmed" mb="md">
+                Execute SELECT queries to view data. Only read-only queries are allowed (automatically limited to 1000 rows).
+              </Text>
+
+              <Textarea
+                label="SQL Query"
+                placeholder="SELECT * FROM certificate_configs LIMIT 10"
+                value={queryText}
+                onChange={(e) => setQueryText(e.target.value)}
+                minRows={4}
+                mb="md"
+                styles={{ input: { fontFamily: 'monospace' } }}
+              />
+
+              <Group mb="md">
+                <Button
+                  leftSection={<IconPlayerPlay size={16} />}
+                  onClick={runQuery}
+                  loading={queryExecuting}
+                  disabled={!queryText.trim()}
+                >
+                  Execute Query
+                </Button>
+                <Button
+                  variant="light"
+                  onClick={() => setQueryText('SELECT * FROM certificate_configs LIMIT 10')}
+                >
+                  Example: Certificates
+                </Button>
+                <Button
+                  variant="light"
+                  onClick={() => setQueryText('SELECT * FROM certificate_results ORDER BY checked_at DESC LIMIT 20')}
+                >
+                  Example: Recent Results
+                </Button>
+              </Group>
+
+              {queryResult && (
+                <div>
+                  {queryResult.error ? (
+                    <Text c="red" size="sm">{queryResult.error}</Text>
+                  ) : (
+                    <>
+                      <Text size="sm" mb="xs" fw={600}>
+                        {queryResult.rowCount} row(s) returned
+                      </Text>
+                      <ScrollArea>
+                        <Table striped highlightOnHover withTableBorder withColumnBorders size="sm">
+                          {queryResult.rows.length > 0 && (
+                            <>
+                              <Table.Thead>
+                                <Table.Tr>
+                                  {Object.keys(queryResult.rows[0]).map((key) => (
+                                    <Table.Th key={key}><Code size="sm">{key}</Code></Table.Th>
+                                  ))}
+                                </Table.Tr>
+                              </Table.Thead>
+                              <Table.Tbody>
+                                {queryResult.rows.map((row, idx) => (
+                                  <Table.Tr key={idx}>
+                                    {Object.values(row).map((value, vidx) => (
+                                      <Table.Td key={vidx}>
+                                        <div style={{ fontSize: 'var(--mantine-font-size-xs)', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {value !== null ? String(value) : <span style={{color: 'var(--mantine-color-dimmed)'}}>NULL</span>}
+                                        </div>
+                                      </Table.Td>
+                                    ))}
+                                  </Table.Tr>
+                                ))}
+                              </Table.Tbody>
+                            </>
+                          )}
+                        </Table>
+                      </ScrollArea>
+                    </>
+                  )}
+                </div>
+              )}
+            </Card>
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
     </Container>
   );
 }

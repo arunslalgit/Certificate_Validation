@@ -366,6 +366,36 @@ app.post('/api/certificates/test-webhook', requireAuth, async (req, res) => {
   }
 });
 
+// Test URL certificate before saving
+app.post('/api/stream/certificates/test-url', requireAuth, async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ error: 'URL required' });
+    }
+
+    const result = await checkCertificate(url);
+
+    // Return success with certificate details
+    res.json({
+      valid: result.valid,
+      status: result.status,
+      daysUntilExpiry: result.daysUntilExpiry,
+      validTo: result.validTo,
+      issuer: result.issuer,
+      hostname: result.hostname,
+    });
+
+  } catch (error) {
+    logger.error('Test URL error', { error: error.message, url: req.body.url });
+    res.status(400).json({
+      valid: false,
+      error: error.message || 'Failed to check certificate'
+    });
+  }
+});
+
 // ============================================================================
 // CERTIFICATE CHECK ENDPOINTS (SSE)
 // ============================================================================
@@ -683,6 +713,81 @@ app.put('/api/settings/:key', requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Update setting error', { error: error.message });
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================================
+// DATABASE TOOLS ENDPOINTS (Admin Only)
+// ============================================================================
+
+// Get database schema
+app.get('/api/database/schema', requireAdmin, async (req, res) => {
+  try {
+    const { rows: tables } = await query(`
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type='table'
+      ORDER BY name
+    `);
+
+    const schema = [];
+
+    for (const table of tables) {
+      // Get table info (columns)
+      const { rows: columns } = await query(`PRAGMA table_info(${table.name})`);
+
+      // Get indexes
+      const { rows: indexes } = await query(`PRAGMA index_list(${table.name})`);
+
+      schema.push({
+        name: table.name,
+        sql: table.sql,
+        columns: columns,
+        indexes: indexes
+      });
+    }
+
+    res.json({ schema });
+  } catch (error) {
+    logger.error('Get schema error', { error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Execute SELECT query (read-only)
+app.post('/api/database/query', requireAdmin, async (req, res) => {
+  try {
+    const { sql } = req.body;
+
+    if (!sql) {
+      return res.status(400).json({ error: 'SQL query required' });
+    }
+
+    // Only allow SELECT queries for safety
+    const trimmedSql = sql.trim().toUpperCase();
+    if (!trimmedSql.startsWith('SELECT')) {
+      return res.status(403).json({ error: 'Only SELECT queries are allowed' });
+    }
+
+    // Limit results to 1000 rows for safety
+    const limitedSql = sql.includes('LIMIT') ? sql : `${sql} LIMIT 1000`;
+
+    const { rows } = await query(limitedSql);
+
+    logger.info('Database query executed', {
+      username: req.session.username,
+      query: sql.substring(0, 100)
+    });
+
+    res.json({
+      rows,
+      rowCount: rows.length,
+      executedQuery: limitedSql
+    });
+
+  } catch (error) {
+    logger.error('Database query error', { error: error.message, sql: req.body.sql });
+    res.status(400).json({ error: error.message });
   }
 });
 

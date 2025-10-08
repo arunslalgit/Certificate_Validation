@@ -80,4 +80,11 @@ export const getCertificateAlerts = (id, limit = 50) =>
 export const getAlertStats = () =>
   api.get('/alerts/stats');
 
+// Database Tools (Admin Only)
+export const getDatabaseSchema = () =>
+  api.get('/database/schema');
+
+export const executeQuery = (sql) =>
+  api.post('/database/query', { sql });
+
 export default api;

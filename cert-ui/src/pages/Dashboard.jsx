@@ -334,12 +334,37 @@ export default function Dashboard() {
                   </Badge>
                 </Table.Td>
                 <Table.Td>
-                  <Text
-                    fw={result.days_until_expiry <= 7 ? 700 : 400}
-                    c={result.days_until_expiry <= 7 ? 'red' : result.days_until_expiry <= 30 ? 'orange' : undefined}
-                  >
-                    {result.days_until_expiry !== null ? `${result.days_until_expiry} days` : 'N/A'}
-                  </Text>
+                  {(() => {
+                    const days = result.days_until_expiry;
+                    const threshold = result.alert_threshold_days || 50;
+                    const critical = Math.floor(threshold * 0.2); // 20% of threshold
+                    const warning = Math.floor(threshold * 0.6); // 60% of threshold
+
+                    let color = 'green';
+                    let weight = 400;
+
+                    if (days === null || days === undefined) {
+                      color = 'gray';
+                    } else if (days <= 0) {
+                      color = 'red';
+                      weight = 700;
+                    } else if (days <= critical) {
+                      color = 'red';
+                      weight = 700;
+                    } else if (days <= warning) {
+                      color = 'orange';
+                      weight = 600;
+                    } else if (days <= threshold) {
+                      color = 'yellow';
+                      weight = 500;
+                    }
+
+                    return (
+                      <Text fw={weight} c={color}>
+                        {days !== null ? `${days} days` : 'N/A'}
+                      </Text>
+                    );
+                  })()}
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm" c="dimmed">
@@ -434,13 +459,31 @@ export default function Dashboard() {
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">Days Until Expiry:</Text>
-                  <Text
-                    size="sm"
-                    fw={700}
-                    c={selectedCert.days_until_expiry <= 7 ? 'red' : selectedCert.days_until_expiry <= 30 ? 'orange' : 'green'}
-                  >
-                    {selectedCert.days_until_expiry !== null ? `${selectedCert.days_until_expiry} days` : 'N/A'}
-                  </Text>
+                  {(() => {
+                    const days = selectedCert.days_until_expiry;
+                    const threshold = selectedCert.alert_threshold_days || 50;
+                    const critical = Math.floor(threshold * 0.2);
+                    const warning = Math.floor(threshold * 0.6);
+
+                    let color = 'green';
+                    if (days === null || days === undefined) {
+                      color = 'gray';
+                    } else if (days <= 0) {
+                      color = 'red';
+                    } else if (days <= critical) {
+                      color = 'red';
+                    } else if (days <= warning) {
+                      color = 'orange';
+                    } else if (days <= threshold) {
+                      color = 'yellow';
+                    }
+
+                    return (
+                      <Text size="sm" fw={700} c={color}>
+                        {days !== null ? `${days} days` : 'N/A'}
+                      </Text>
+                    );
+                  })()}
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">Expiry Date:</Text>

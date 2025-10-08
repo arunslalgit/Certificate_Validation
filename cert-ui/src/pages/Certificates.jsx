@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Container, Title, Button, Table, Badge, Group, Modal, TextInput, Select, NumberInput, ActionIcon, LoadingOverlay, MultiSelect, Text } from '@mantine/core';
+import { Container, Title, Button, Table, Badge, Group, Modal, TextInput, Select, NumberInput, ActionIcon, LoadingOverlay, MultiSelect, Text, Alert } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconPlus, IconEdit, IconTrash, IconBrandTeams, IconFlask } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconBrandTeams, IconFlask, IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { getCertificates, createCertificate, updateCertificate, deleteCertificate, testWebhook, getEnvironments } from '../api';
 
 export default function Certificates() {
@@ -10,6 +10,8 @@ export default function Certificates() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [testingUrl, setTestingUrl] = useState(false);
+  const [urlTestResult, setUrlTestResult] = useState(null);
   const [formData, setFormData] = useState({
     eai_number: '',
     eai_name: '',
@@ -135,8 +137,69 @@ export default function Certificates() {
     }
   };
 
+  const testUrl = async () => {
+    if (!formData.url) {
+      notifications.show({
+        title: 'Error',
+        message: 'Please enter a URL first',
+        color: 'red',
+      });
+      return;
+    }
+
+    setTestingUrl(true);
+    setUrlTestResult(null);
+
+    try {
+      const response = await fetch(`/api/stream/certificates/test-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ url: formData.url })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.valid) {
+        setUrlTestResult({
+          success: true,
+          message: `✓ Valid certificate! Expires in ${data.daysUntilExpiry} days`,
+          data: data
+        });
+        notifications.show({
+          title: 'URL Test Successful',
+          message: `Certificate is valid and expires in ${data.daysUntilExpiry} days`,
+          color: 'green',
+        });
+      } else {
+        setUrlTestResult({
+          success: false,
+          message: `✗ ${data.error || 'Invalid certificate or connection failed'}`,
+        });
+        notifications.show({
+          title: 'URL Test Failed',
+          message: data.error || 'Unable to validate certificate',
+          color: 'red',
+        });
+      }
+    } catch (error) {
+      setUrlTestResult({
+        success: false,
+        message: `✗ ${error.message || 'Connection failed'}`,
+      });
+      notifications.show({
+        title: 'URL Test Failed',
+        message: 'Unable to connect to URL',
+        color: 'red',
+      });
+    } finally {
+      setTestingUrl(false);
+    }
+  };
+
   const resetForm = () => {
     setEditingId(null);
+    setUrlTestResult(null);
     setFormData({
       eai_number: '',
       eai_name: '',
@@ -275,9 +338,36 @@ export default function Certificates() {
           placeholder="https://example.com"
           required
           value={formData.url}
-          onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-          mb="sm"
+          onChange={(e) => {
+            setFormData({ ...formData, url: e.target.value });
+            setUrlTestResult(null); // Clear test result when URL changes
+          }}
+          mb="xs"
         />
+
+        <Group mb="sm">
+          <Button
+            variant="light"
+            color="blue"
+            leftSection={<IconFlask size={16} />}
+            onClick={testUrl}
+            loading={testingUrl}
+            size="sm"
+          >
+            Test URL Before Saving
+          </Button>
+        </Group>
+
+        {urlTestResult && (
+          <Alert
+            icon={urlTestResult.success ? <IconCheck /> : <IconAlertCircle />}
+            title={urlTestResult.success ? 'URL Test Passed' : 'URL Test Failed'}
+            color={urlTestResult.success ? 'green' : 'red'}
+            mb="sm"
+          >
+            {urlTestResult.message}
+          </Alert>
+        )}
 
         <Select
           label="Environment"
