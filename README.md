@@ -3,7 +3,7 @@
 ## Project Overview
 A certificate expiry monitoring system that checks SSL certificates from URLs, extracts Subject Alternate Names (SANs), and sends alerts via email or Microsoft Teams webhooks. **Each team can configure their own alert settings and check frequency per certificate.** Built using the same architecture as the existing 1-Click O11y project.
 
-## Technology Stack
+## Technology Stack 
 - **Frontend**: React + Mantine v8.0.1 + Tailwind CSS
 - **Backend**: Node.js + Express
 - **Database**: Better-SQLite3 only
