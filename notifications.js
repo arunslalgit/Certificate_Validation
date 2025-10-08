@@ -169,8 +169,9 @@ function formatCertificateAlert(config, result) {
  * Send certificate expiry alert
  */
 async function sendCertificateAlert(config, result) {
-  const message = formatCertificateAlert(config, result);
-  const subject = `Certificate Alert: ${config.eai_name} - ${result.status.replace('_', ' ')}`;
+  const db = require('./db');
+  const statusEmoji = result.status === 'expired' ? '🔴' : '🟠';
+  const subject = `${statusEmoji} Certificate Expiry Alert: ${config.eai_name}`;
 
   const results = {
     email: null,
@@ -179,24 +180,190 @@ async function sendCertificateAlert(config, result) {
 
   // Send email if configured
   if (config.email_recipients) {
+    const htmlBody = formatEmailBody(config, result);
     results.email = await sendEmail(
       config.email_recipients,
       subject,
-      message.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      htmlBody
     );
+
+    // Log email alert
+    try {
+      await db.query(`
+        INSERT INTO alert_logs
+        (config_id, result_id, alert_type, recipients, webhook_url, status, error_message)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        config.id,
+        result.id || null,
+        'email',
+        config.email_recipients,
+        null,
+        results.email.success ? 'sent' : 'failed',
+        results.email.error || null
+      ]);
+      logger.info('Email alert logged', { configId: config.id, status: results.email.success ? 'sent' : 'failed' });
+    } catch (error) {
+      logger.error('Failed to log email alert', { error: error.message });
+    }
   }
 
   // Send Teams notification if configured
   if (config.teams_webhook_url) {
-    results.teams = await sendTeamsNotification(
-      config.teams_webhook_url,
-      subject,
-      message,
-      result.status === 'expired' ? 'error' : 'warning'
-    );
+    const teamsCard = formatTeamsCard(config, result);
+    results.teams = await sendTeamsWebhook(config.teams_webhook_url, teamsCard);
+
+    // Log Teams alert
+    try {
+      await db.query(`
+        INSERT INTO alert_logs
+        (config_id, result_id, alert_type, recipients, webhook_url, status, error_message)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        config.id,
+        result.id || null,
+        'teams',
+        null,
+        config.teams_webhook_url,
+        results.teams.success ? 'sent' : 'failed',
+        results.teams.error || null
+      ]);
+      logger.info('Teams alert logged', { configId: config.id, status: results.teams.success ? 'sent' : 'failed' });
+    } catch (error) {
+      logger.error('Failed to log Teams alert', { error: error.message });
+    }
   }
 
   return results;
+}
+
+/**
+ * Format email HTML body
+ */
+function formatEmailBody(config, result) {
+  const expiryDate = new Date(result.validTo).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const daysColor = result.daysUntilExpiry <= 7 ? 'red' : 'orange';
+  const statusEmoji = result.status === 'expired' ? '🔴' : '🟠';
+
+  let html = `
+    <h2>${statusEmoji} Certificate Expiry Alert: ${config.eai_name}</h2>
+    <p><strong>Summary:</strong> Certificate for ${config.url} ${result.status === 'expired' ? 'has expired' : `expires in ${result.daysUntilExpiry} days`}</p>
+
+    <h3>Certificate Details:</h3>
+    <ul>
+      <li><strong>EAI Number:</strong> ${config.eai_number}</li>
+      <li><strong>EAI Name:</strong> ${config.eai_name}</li>
+      <li><strong>URL:</strong> ${config.url}</li>
+      <li><strong>Environment:</strong> ${config.environment.toUpperCase()}</li>
+      <li><strong>Hostname:</strong> ${result.hostname}</li>
+      <li><strong>Expiry Date:</strong> ${expiryDate}</li>
+      <li><strong>Days Remaining:</strong> <span style="color: ${daysColor}; font-weight: bold;">${result.daysUntilExpiry}</span></li>
+      <li><strong>Issuer:</strong> ${result.issuer}</li>
+      <li><strong>Alert Threshold:</strong> ${config.alert_threshold_days} days</li>
+    </ul>
+  `;
+
+  if (result.sans && result.sans.length > 0) {
+    html += '<h4>Subject Alternate Names:</h4><ul>';
+    result.sans.slice(0, 10).forEach(san => {
+      html += `<li>${san}</li>`;
+    });
+    if (result.sans.length > 10) {
+      html += `<li>... and ${result.sans.length - 10} more</li>`;
+    }
+    html += '</ul>';
+  }
+
+  html += `
+    <p style="color: #666; font-size: 12px; margin-top: 20px;">
+      This alert was triggered because the certificate expires within ${config.alert_threshold_days} days.
+      Alerts are sent only on Monday and Friday, once per day per certificate.
+    </p>
+  `;
+
+  return html;
+}
+
+/**
+ * Format Teams MessageCard
+ */
+function formatTeamsCard(config, result) {
+  const expiryDate = new Date(result.validTo).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  const themeColor = result.daysUntilExpiry <= 7 ? 'D13438' : 'FFA500';
+  const statusEmoji = result.status === 'expired' ? '🔴' : '🟠';
+
+  let sansText = '';
+  if (result.sans && result.sans.length > 0) {
+    sansText = '\\n\\n**Subject Alternate Names:**\\n';
+    result.sans.slice(0, 10).forEach(san => {
+      sansText += `- ${san}\\n`;
+    });
+    if (result.sans.length > 10) {
+      sansText += `- ... and ${result.sans.length - 10} more`;
+    }
+  }
+
+  return {
+    '@type': 'MessageCard',
+    '@context': 'https://schema.org/extensions',
+    summary: `Certificate for ${config.url} ${result.status === 'expired' ? 'has expired' : `expires in ${result.daysUntilExpiry} days`}`,
+    themeColor: themeColor,
+    title: `${statusEmoji} Certificate Expiry Alert: ${config.eai_name}`,
+    sections: [{
+      activityTitle: 'Certificate Details',
+      facts: [
+        { name: 'EAI Number:', value: config.eai_number },
+        { name: 'EAI Name:', value: config.eai_name },
+        { name: 'URL:', value: config.url },
+        { name: 'Environment:', value: config.environment.toUpperCase() },
+        { name: 'Hostname:', value: result.hostname },
+        { name: 'Expiry Date:', value: expiryDate },
+        { name: 'Days Remaining:', value: `**${result.daysUntilExpiry} days**` },
+        { name: 'Issuer:', value: result.issuer },
+        { name: 'Alert Threshold:', value: `${config.alert_threshold_days} days` }
+      ],
+      text: `⚠️ **Action Required:** Certificate ${result.status === 'expired' ? 'has expired' : 'expiring soon'} - please renew!${sansText}`
+    }],
+    potentialAction: [{
+      '@type': 'OpenUri',
+      name: 'View Certificate',
+      targets: [{
+        os: 'default',
+        uri: config.url
+      }]
+    }]
+  };
+}
+
+/**
+ * Send Teams webhook (for custom cards)
+ */
+async function sendTeamsWebhook(webhookUrl, card) {
+  try {
+    const response = await axios.post(webhookUrl, card, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
+    });
+
+    logger.info('Teams MessageCard sent', { status: response.status });
+    return { success: true, status: response.status };
+
+  } catch (error) {
+    logger.error('Failed to send Teams MessageCard', { error: error.message });
+    return { success: false, error: error.message };
+  }
 }
 
 module.exports = {
@@ -204,5 +371,8 @@ module.exports = {
   sendTeamsNotification,
   sendCertificateAlert,
   testWebhook,
-  getSmtpSettings
+  getSmtpSettings,
+  sendTeamsWebhook,
+  formatEmailBody,
+  formatTeamsCard
 };

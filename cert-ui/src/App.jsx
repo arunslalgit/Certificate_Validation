@@ -6,19 +6,29 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Certificates from './pages/Certificates';
+import Users from './pages/Users';
+import Settings from './pages/Settings';
 
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/dates/styles.css';
 
-function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+function ProtectedRoute({ children, adminOnly = false }) {
+  const { isAuthenticated, loading, isAdmin } = useAuth();
 
   if (loading) {
     return <div>Loading...</div>;
   }
 
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+
+  if (adminOnly && !isAdmin) {
+    return <Navigate to="/" />;
+  }
+
+  return children;
 }
 
 function App() {
@@ -39,6 +49,16 @@ function App() {
             >
               <Route index element={<Dashboard />} />
               <Route path="certificates" element={<Certificates />} />
+              <Route path="users" element={
+                <ProtectedRoute adminOnly={true}>
+                  <Users />
+                </ProtectedRoute>
+              } />
+              <Route path="settings" element={
+                <ProtectedRoute adminOnly={true}>
+                  <Settings />
+                </ProtectedRoute>
+              } />
             </Route>
           </Routes>
         </BrowserRouter>
